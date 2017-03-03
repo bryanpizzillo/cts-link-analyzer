@@ -1,0 +1,29 @@
+{
+  "name": "cts-link-analyzer",
+  "version": "0.0.0",
+  "description": "A commander CLI app",
+  "private": true,
+  "bin": {
+    "cts-link-analyzer": "./bin/cts-link-analyzer"
+  },
+  "scripts": {
+    "test": "mocha -R spec"
+  },
+  "author": {
+    "name": "Bryan Pizzillo",
+    "email": "bryanp@mail.nih.gov",
+    "url": "https://github.com/bryanpizzillo"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/bryanpizzillo/cts-link-analyzer"
+  },
+  "license": "MIT",
+  "bugs": "https://github.com/bryanpizzillo/cts-link-analyzer/issues",
+  "dependencies": {
+    "commander": "~2.0.0",
+    "autocmdr": "~0.0.7"
+  },
+  "devDependencies": {
+  }
+}
