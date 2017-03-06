@@ -21,9 +21,13 @@
   "license": "MIT",
   "bugs": "https://github.com/bryanpizzillo/cts-link-analyzer/issues",
   "dependencies": {
+    "async": "^2.1.5",
+    "autocmdr": "~0.0.7",
+    "colors": "^1.1.2",
     "commander": "~2.0.0",
-    "autocmdr": "~0.0.7"
+    "lodash": "^4.17.4",
+    "request": "^2.80.0",
+    "xlsx": "^0.8.7"
   },
-  "devDependencies": {
-  }
+  "devDependencies": {}
 }
