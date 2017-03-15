@@ -13,6 +13,10 @@ require('autocmdr/lib/help')(program);
 
 
 program
+	.option('-u --user <user>', 'User name')
+	.option('-p --passwd <passwd>', 'User password')
+	.option('-s --server <server>', 'Server')
+	.option('-P --port <port>', 'Port')
 	.parse(process.argv);
 
 if (program.args.length < 1 ) {

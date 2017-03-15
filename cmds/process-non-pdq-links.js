@@ -8,6 +8,9 @@ const request   = require('request');
 const url       = require('url');
 const XLSX      = require('xlsx');
 
+const CTLinkSearchDef       = require('../lib/ctlink-search-def');
+const SavedSearchDef        = require('../lib/saved-search-def');
+const TDSProtocolSearchSvc  = require('../lib/tds-protocol-search-svc');
 
 module.exports = ProcessNonPDQLinks;
 
@@ -15,12 +18,18 @@ const CGOV_RESULTS_FOUND_STRING = /\s*Results\s+\d+-\d+ of (\d+) for your search
 const CGOV_NO_RESULTS_STRING = /\s*No results found\.\s*/;
 
 class NonPDQLinkProcessor {
-    constructor(options) {
+    constructor(svc, options) {
+        this.searchDefSvc = svc;
         this.inputFile = options.inputFile;
         this.outputFile = options.outputFile;
     }
 
     _processCTLink(linkRecord, done) {
+        
+        let params = linkRecord.parsed_url.query;
+
+        linkRecord.search_def = new CTLinkSearchDef(params);
+
         done();
 
         /*
@@ -47,7 +56,17 @@ class NonPDQLinkProcessor {
     }
 
     _processSavedSearch(linkRecord, done) {
-        done();
+
+        let params = linkRecord.parsed_url.query;
+
+        linkRecord.search_def = new SavedSearchDef(this.searchDefSvc, params.protocolsearchid, (err) => {
+
+            if (err) {
+                return done(err);
+            }
+
+            done();
+        });                
     }
 
     /**
@@ -89,9 +108,6 @@ class NonPDQLinkProcessor {
                 done(new Error(`Unknown CGOV result response: ${resultStr}`));
             }
 
-
-
-
             done();
         });
     }
@@ -117,10 +133,12 @@ class NonPDQLinkProcessor {
                 switch(linkRecord.parsed_url.pathname.toLowerCase()) {
                     case "/search/clinicaltrialslink":
                     case "/search/clinicaltrialslink.aspx":
+                        linkRecord.search_url_type = 'CTLink';
                         return this._processCTLink(linkRecord, next);
                     case "/search/resultsclinicaltrials.aspx":
                     case "/about-cancer/treatment/clinical-trials/search/results":
                     case "/clinicaltrials/search/results":
+                        linkRecord.search_url_type = 'SavedSearch';
                         return this._processSavedSearch(linkRecord, next);
                     default:
                         //We should hard fail here and the code can be tweaked to support the new
@@ -132,6 +150,51 @@ class NonPDQLinkProcessor {
             // STEP 4. Get API Trial Counts
         ], done
         )
+    }
+
+    _saveWorkbook(data, cols, done) {
+        let wb = {};
+        wb.Sheets = {};
+        wb.SheetNames = [];
+
+        let ws_name = "Sheet1";
+
+        let ws = {};
+
+        let range = {s: {c:0, r:0}, e: {c:0, r:0 }};
+
+        for(let R = 0; R != data.length; ++R) {
+            if (range.e.r < R) range.e.r = R;
+            for(var C = 0; C != COLS.length; ++C) {
+                if (range.e.c < C) range.e.c = C;
+
+                /* create cell object: .v is the actual data */
+                var cell = { v: data[R][COLS[C]] };
+                if(cell.v == null) continue;
+
+                /* create the correct cell reference */
+                var cell_ref = XLSX.utils.encode_cell({c:C,r:R});
+
+                /* determine the cell type */
+                if(typeof cell.v === 'number') cell.t = 'n';
+                else if(typeof cell.v === 'boolean') cell.t = 'b';
+                else cell.t = 's';
+
+                /* add to structure */
+                ws[cell_ref] = cell;
+            }            
+        }
+
+        ws['!ref'] = XLSX.utils.encode_range(range);
+
+        /* add worksheet to workbook */
+        wb.SheetNames.push(ws_name);
+        wb.Sheets[ws_name] = ws;
+
+        /* write file */
+        XLSX.writeFile(wb, this.outputFile);
+
+        done();        
     }
 
     process(done) {
@@ -149,9 +212,9 @@ class NonPDQLinkProcessor {
                 let linkRecord = {
                     url: item['bad link'],
                     cgov_trial_count: 0,
-                    api_trial_count: 0,
-                    comment: item['Comment'],
+                    api_trial_count: 0,                    
                     new_url: item['NEW URL'],
+                    comment: item['Comment'],
                     bp_text: item['Boiler Plate Text'],
                     ref_url: item['url used on'],
                     ref_contentid: item['contentid'],
@@ -171,6 +234,10 @@ class NonPDQLinkProcessor {
                     'IDstring': item['IDstring'],
                     'Type': item['Type'],
                     parsed_url: url.parse(item['bad link'], true),
+                    search_url_type: 'UNK',
+                    search_type: 'UNK',
+                    search_link_params: {},
+                    search_def: false, 
                     api_params: {}
                 };
                 //Process the link and "return" the transformed linkRecord once done
@@ -183,9 +250,33 @@ class NonPDQLinkProcessor {
                 });
             },
             //SO THIS SHOULD ACTUALLY SAVE OUT A NEW SHEET
-            done
+            (err, links) => {
+                if (err) {
+                    return done(err);
+                }
+
+
+
+                //Commenting out so we can do some counts.
+                /*
+                this._saveWorkbook(
+                    links,
+                    [
+                        'url', 'cgov_trial_count', 'api_trial_count', 'new_url',
+                        'comment', 'bp_text', 'ref_url', 'ref_contentid', 'ref_contentType',
+                        'ref_title', 'ref_statename', 'By Cancer Type', 'Stage Subtype', 'By Trial Type',                        
+                        'Trial Phase', 'Treatment / Intervention', 'Lead Org', 'Keywords / Phrases',
+                        'USA only', 'No Results', 'protocolsearchid', 'IDstring', 'Type'
+                    ], 
+                    done
+                );
+                */
+
+                done();
+            }
         )
     }
+
 }
 
 function ProcessNonPDQLinks(program) {
@@ -199,10 +290,35 @@ function ProcessNonPDQLinks(program) {
             and if so how many trials are in the API. \
         ')
         .action((input, output, cmd) => {
-            let processor = new NonPDQLinkProcessor({
+
+            //Check input params.
+            if (
+                (!cmd.parent.server || cmd.parent.server == "" ) ||
+                (!cmd.parent.user || cmd.parent.user == "" ) || 
+                (!cmd.parent.passwd || cmd.parent.passwd == "" ) ||
+                (!cmd.parent.port || cmd.parent.port == "" )
+            ) {
+                console.error(colors.red('Invalid server, username or password'));
+                program.help();
+            }
+
+            //Initialize the search service            
+            let svc = new TDSProtocolSearchSvc(
+                cmd.parent.user, 
+                cmd.parent.passwd, 
+                cmd.parent.server,
+                cmd.parent.port,
+                (err) => {
+                    if (err) {
+                    throw err;
+                    }
+                }
+            );
+
+            let processor = new NonPDQLinkProcessor(svc, {
                 inputFile: input,
                 outputFile: output
-            });
+            });            
 
             try {
                 processor.process((err, res) => {
@@ -212,6 +328,9 @@ function ProcessNonPDQLinks(program) {
 
                     //Handle whatever with res.
                     //console.log(res);
+
+                    //Clean up the search svc
+                    svc.dispose();
 
                     //Exit
                     console.log("Finished.  Exiting...")

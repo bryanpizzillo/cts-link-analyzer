@@ -28,6 +28,8 @@
     "commander": "~2.0.0",
     "lodash": "^4.17.4",
     "request": "^2.80.0",
+    "tedious": "^1.15.0",
+    "tedious-connection-pool": "^1.0.5",
     "xlsx": "^0.8.7"
   },
   "devDependencies": {}
