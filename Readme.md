@@ -6,13 +6,11 @@ A commander CLI app
 
 ## Usage
 
-To install cts-link-analyzer from npm, run:
+To run, you need to first generate a link db
 
-```
-$ npm install -g cts-link-analyzer
-```
+```node ./bin/cts-link-analyzer generate-link-db --server=<db_server> --port=<db_port> --user=<db_user> --passwd=<pass> <input_xlsx> <output_file>```
 
-```node ./bin/cts-link-analyzer --help```
+
 
 ## License
 
